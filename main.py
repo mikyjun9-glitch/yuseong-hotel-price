@@ -1,9 +1,8 @@
 import os
-import time
+import re
 import requests
 from datetime import datetime
-import re
-
+from zoneinfo import ZoneInfo
 
 # ==========================================
 # 텔레그램 설정
@@ -12,34 +11,32 @@ import re
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID = "5170675475"
 
-
 # ==========================================
-# 야놀자 숙소
+# 야놀자 숙소 3개
 # ==========================================
 
 HOTELS = {
     "탑 클라우드호텔": "https://nol.yanolja.com/stay/domestic/28012",
     "맥모텔": "https://nol.yanolja.com/stay/domestic/24135",
-    "호텔세르보": "https://nol.yanolja.com/stay/domestic/3010407"
+    "호텔세르보": "https://nol.yanolja.com/stay/domestic/3010407",
 }
 
 
 # ==========================================
-# 텔레그램 알림
+# 텔레그램 보내기
 # ==========================================
 
 def send_telegram(message):
-
     if not TELEGRAM_TOKEN:
-        print("텔레그램 봇 토큰이 설정되지 않았습니다.")
+        print("텔레그램 토큰이 없습니다.")
         return
 
-    url = (
-        f"https://api.telegram.org/bot"
-        f"{TELEGRAM_TOKEN}/sendMessage"
-    )
-
     try:
+        url = (
+            f"https://api.telegram.org/bot"
+            f"{TELEGRAM_TOKEN}/sendMessage"
+        )
+
         response = requests.post(
             url,
             data={
@@ -56,16 +53,12 @@ def send_telegram(message):
 
 
 # ==========================================
-# 야놀자 가격 확인
+# 야놀자 가격 가져오기
 # ==========================================
 
 def get_price(url):
 
-    if not url:
-        return None
-
     try:
-
         response = requests.get(
             url,
             headers={
@@ -73,203 +66,101 @@ def get_price(url):
                 "Mozilla/5.0 (Linux; Android 10) "
                 "AppleWebKit/537.36 "
                 "(KHTML, like Gecko) "
-                "Chrome/120.0.0.0 "
-                "Mobile Safari/537.36",
-                "Accept-Language":
-                "ko-KR,ko;q=0.9"
+                "Chrome/120.0 Mobile Safari/537.36"
             },
             timeout=20
         )
 
-        if response.status_code != 200:
-            print(
-                "페이지 접속 실패:",
-                response.status_code
-            )
-            return None
+        response.raise_for_status()
 
         text = response.text
 
-        # ==================================
-        # 원화 가격 찾기
-        # ==================================
+        # 페이지 안의 가격 후보 검색
+        patterns = [
+            r'"price"\s*:\s*(\d{4,7})',
+            r'"salePrice"\s*:\s*(\d{4,7})',
+            r'"discountPrice"\s*:\s*(\d{4,7})',
+            r'"amount"\s*:\s*(\d{4,7})',
+        ]
 
-        prices = re.findall(
-            r'([0-9][0-9,]*)\s*원',
-            text
-        )
+        prices = []
 
-        numbers = []
+        for pattern in patterns:
+            found = re.findall(pattern, text)
 
-        for value in prices:
+            for value in found:
+                try:
+                    price = int(value)
 
-            value = value.replace(",", "")
+                    if 10000 <= price <= 1000000:
+                        prices.append(price)
 
-            try:
+                except:
+                    pass
 
-                number = int(value)
+        if not prices:
+            return None
 
-                # 1만원 ~ 100만원
-                if 10000 <= number <= 1000000:
-                    numbers.append(number)
-
-            except ValueError:
-                pass
-
-        if numbers:
-            return min(numbers)
-
-        print("가격을 찾지 못했습니다.")
+        return min(prices)
 
     except Exception as e:
-
         print("가격 확인 오류:", e)
-
-    return None
+        return None
 
 
 # ==========================================
-# 메인 감시
+# 메인
 # ==========================================
 
-last_prices = {}
+def main():
 
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
 
-while True:
+    print(
+        "[" + now.strftime("%Y-%m-%d %H:%M:%S")
+        + "] 가격 확인 시작"
+    )
 
-    try:
+    results = []
 
-        now = datetime.now()
+    for hotel, url in HOTELS.items():
 
-        current_time = (
-            now.hour * 60
-            + now.minute
-        )
+        print(hotel + " 확인 중...")
 
-        # ==================================
-        # 오전 10:00 ~ 오후 11:50 감시
-        # ==================================
+        price = get_price(url)
 
-        start = 10 * 60
-        end = 23 * 60 + 50
+        if price is None:
 
-        if start <= current_time <= end:
+            print(hotel + ": 가격 확인 실패")
 
-            print(
-                "\n["
-                + now.strftime("%Y-%m-%d %H:%M:%S")
-                + "] 가격 확인 시작"
+            results.append(
+                hotel + ": 가격 확인 실패"
             )
-
-            # ==================================
-            # 야놀자 3개 숙소 확인
-            # ==================================
-
-            for hotel, url in HOTELS.items():
-
-                print(
-                    hotel + " 확인 중..."
-                )
-
-                price = get_price(url)
-
-                # 가격 확인 실패
-                if price is None:
-
-                    print(
-                        hotel
-                        + ": 가격 확인 실패"
-                    )
-
-                    continue
-
-                print(
-                    hotel
-                    + ": "
-                    + f"{price:,}원"
-                )
-
-                old_price = last_prices.get(hotel)
-
-                # ==================================
-                # 처음 확인한 가격은 저장만
-                # ==================================
-
-                if old_price is None:
-
-                    last_prices[hotel] = price
-
-                    print(
-                        hotel
-                        + ": "
-                        + f"{price:,}원 저장"
-                    )
-
-                    continue
-
-                # ==================================
-                # 가격이 변경된 경우
-                # ==================================
-
-                if price != old_price:
-
-                    if price < old_price:
-                        change = "🔻 가격 하락"
-                    else:
-                        change = "🔺 가격 상승"
-
-                    message = (
-                        "🚨 호텔 가격 변경\n\n"
-                        + change
-                        + "\n"
-                        + "숙소: "
-                        + hotel
-                        + "\n"
-                        + "이전 가격: "
-                        + f"{old_price:,}원"
-                        + "\n"
-                        + "현재 가격: "
-                        + f"{price:,}원"
-                        + "\n"
-                        + "확인시간: "
-                        + now.strftime("%H:%M")
-                    )
-
-                    # 텔레그램 전송
-                    send_telegram(message)
-
-                    # 새로운 가격 저장
-                    last_prices[hotel] = price
-
-                    print(message)
-
-                else:
-
-                    print(
-                        hotel
-                        + ": 가격 변동 없음"
-                    )
 
         else:
 
             print(
-                "["
-                + now.strftime("%H:%M")
-                + "] 감시시간 외"
+                hotel + ": "
+                + f"{price:,}원"
             )
 
-        # ==================================
-        # 5분마다 확인
-        # ==================================
+            results.append(
+                hotel + ": "
+                + f"{price:,}원"
+            )
 
-        time.sleep(300)
+    # 수동 테스트할 때 결과 확인용
+    message = (
+        "🏨 야놀자 가격 확인\n\n"
+        + "\n".join(results)
+        + "\n\n확인시간: "
+        + now.strftime("%Y-%m-%d %H:%M")
+    )
 
-    except Exception as e:
+    send_telegram(message)
 
-        print(
-            "메인 감시 오류:",
-            e
-        )
+    print("가격 확인 완료")
 
-        # 오류가 발생해도 프로그램 종료하지 않음
-        time.sleep(60)
+
+if __name__ == "__main__":
+    main()

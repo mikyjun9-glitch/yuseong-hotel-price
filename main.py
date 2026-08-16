@@ -70,7 +70,8 @@ def get_prices(name, url):
 
         print("가격 후보:", prices)
         print(f"{name} 최저 판매가: {min(prices):,}원")
-
+        except requests.RequestException as e:
+        print(f"{name} : 요청 오류 - {e}")
 
 def main():
 

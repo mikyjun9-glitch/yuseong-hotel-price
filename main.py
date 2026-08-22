@@ -15,6 +15,8 @@ HOTELS = {
     "탑 클라우드호텔": "https://nol.yanolja.com/stay/domestic/28012",
     "맥모텔": "https://nol.yanolja.com/stay/domestic/24135",
     "호텔세르보": "https://nol.yanolja.com/stay/domestic/3010407",
+    "도안 자우리": "https://nol.yanolja.com/stay/domestic/3000349",
+    "스파타워": "https://nol.yanolja.com/stay/domestic/23960",
 }
 
 HEADERS = {
